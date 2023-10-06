@@ -161,3 +161,6 @@ cython_debug/
 
 *~
 .DS_Store
+
+alignment/parangonada_files/
+alignment/parangonada_files.zip
