@@ -11,7 +11,7 @@ To create setup the environment, run the following commands in the terminal:
 ```bash
 git clone https://github.com/MusicalInformatics/miws23.git
 cd miws23
-conda create env -f environment.yml
+conda env create -f environment.yml
 ```
 
 To activate the environment in the terminal:
