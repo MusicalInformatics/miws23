@@ -4,6 +4,22 @@ This repository contains materials for the Winter Semester 2023 course on [Music
 
 For more information, see the [Moodle page of the course](https://moodle.jku.at/jku/course/view.php?id=27640).
 
+## Setup
+
+To create setup the environment, run the following commands in the terminal:
+
+```bash
+git clone https://github.com/MusicalInformatics/miws23.git
+cd miws23
+conda create env -f environment.yml
+```
+
+To activate the environment in the terminal:
+
+```bash
+conda activate miws23
+```
+
 ## Lecturers
 
 * Carlos Cancino-Chacón: [carlos_eduardo.cancino_chacon@jku.at](mailto:carlos_eduardo.cancino_chacon@jku.at)
