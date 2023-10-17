@@ -4,6 +4,7 @@
 Baseline submission for the music alignment challenge 
 for Musical Informatics WS23
 """
+import warnings
 
 import partitura as pt
 import os
@@ -22,6 +23,12 @@ from challenge_utils import (
     load_dataset,
     compare_alignments,
     export_to_challenge,
+)
+
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    module="partitura.*",
 )
 
 
@@ -59,8 +66,9 @@ def compute_pianoroll_score(
         return_idxs=True,
         piano_range=True,  # Since we are using only piano music,
         time_div=time_div,
+        binary=True,
     )
-    return piano_roll.todense().T, idx
+    return piano_roll.toarray().T, idx
 
 
 def compute_pianoroll_performance(
@@ -94,11 +102,10 @@ def compute_pianoroll_performance(
         return_idxs=True,
         piano_range=True,  # Since we are using only piano music,
         time_div=time_div,
+        binary=True, # Discard MIDI velocity
     )
 
-    # Discard MIDI velocity
-    piano_roll = piano_roll.todense().T
-    piano_roll[piano_roll > 0] = 1
+    piano_roll = piano_roll.toarray().T
     return piano_roll, idx
 
 
@@ -137,10 +144,11 @@ def fast_dynamic_time_warping(
         dist = 2
     else:
         dist = getattr(sp_dist, metric)
+
     dtwd, warping_path = fastdtw(X, Y, dist=dist)
 
     # Make path a numpy array
-    warping_path = np.array(warping_path)
+    warping_path = np.array(warping_path, dtype=int)
     return warping_path, dtwd
 
 
@@ -212,7 +220,6 @@ def greedy_note_alignment(
             pc2, s2, e2, pitch2 = coord2
             if note2_id not in used_notes2:
                 if pitch2 == pitch1 and s2 <= max2 and e2 >= min2:
-
                     note_alignment.append(
                         {
                             "label": "match",
@@ -276,7 +283,7 @@ if __name__ == "__main__":
 
     if args.datadir is None:
         raise ValueError("No data directory given")
-    
+
     # Create output directory if it does not exist
     if not os.path.exists(args.outdir):
         os.mkdir(args.outdir)

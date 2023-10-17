@@ -67,8 +67,11 @@ def compute_pianoroll_score(
         return_idxs=True,
         piano_range=True,  # Since we are using only piano music,
         time_div=time_div,
+        binary=True,
+        time_unit="beat",
     )
-    return piano_roll.todense().T, idx
+
+    return piano_roll.toarray().T, idx
 
 
 def compute_pianoroll_performance(
@@ -102,11 +105,12 @@ def compute_pianoroll_performance(
         return_idxs=True,
         piano_range=True,  # Since we are using only piano music,
         time_div=time_div,
+        binary=True,
+        time_unit="sec",
     )
 
     # Discard MIDI velocity
-    piano_roll = piano_roll.todense().T
-    piano_roll[piano_roll > 0] = 1
+    piano_roll = piano_roll.toarray().T
     return piano_roll, idx
 
 
@@ -145,10 +149,11 @@ def fast_dynamic_time_warping(
         dist = 2
     else:
         dist = getattr(sp_dist, metric)
+
     dtwd, warping_path = fastdtw(X, Y, dist=dist)
 
     # Make path a numpy array
-    warping_path = np.array(warping_path)
+    warping_path = np.array(warping_path, dtype=int)
     return warping_path, dtwd
 
 
@@ -261,7 +266,10 @@ def process_piece(
     pdata: Tuple,
 ) -> Tuple[str, Dict[str, Any], Tuple[float, float, float]]:
     """
-    Compute the alignment of a piece
+    Compute the alignment of a piece (for parallel processing)
+
+    This method is the inner computation in the for loop in 
+    Baseline_Alignment.py
     """
     # Extract data from pdata
     performance_note_array, score_note_array, gt_alignment = pdata
@@ -332,8 +340,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--max-workers",
         "-m",
-        help="Maximum number of workers for parallel processing of the pieces (by default will use all available processors)",
+        help=(
+            "Maximum number of workers for parallel processing "
+            "of the pieces (by default will use all available processors)"
+        ),
         default=None,
+        type=int,
     )
     args = parser.parse_args()
 
@@ -353,7 +365,7 @@ if __name__ == "__main__":
     piece_names = []
 
     # Using ProcessPoolExecutor to parallelize the loop
-    with ProcessPoolExecutor() as executor:
+    with ProcessPoolExecutor(max_workers=args.max_workers) as executor:
         results = list(executor.map(process_piece, dataset.keys(), dataset.values()))
 
     # Aggregate results
@@ -362,11 +374,23 @@ if __name__ == "__main__":
         alignments.append(res_predicted_alignment)
         evaluation.append(res_piece_eval)
         print(
-            f"{res_piece_name}: F-score:{res_piece_eval[2]:.2f} Precision:{res_piece_eval[0]:.2f} Recall:{res_piece_eval[1]:.2f}"
+            f"{res_piece_name}: "
+            f"F-score:{res_piece_eval[2]:.2f} "
+            f"Precision:{res_piece_eval[0]:.2f} "
+            f"Recall:{res_piece_eval[1]:.2f}"
         )
 
+    # compute mean evaluation
+    mean_eval = np.mean(evaluation, 0)
+
+    print(
+        "\n\nAverage Performance over the dataset\n"
+        f"F-score:{mean_eval[2]:.2f}\t"
+        f"Precision:{mean_eval[0]:.2f}\t",
+        f"Recall:{mean_eval[1]:.2f}",
+    )
+
     if args.challenge:
-        # Do not modify this!
         script_name = os.path.splitext(os.path.basename(__file__))[0]
         outfile = os.path.join(args.outdir, f"{script_name}_challenge.npz")
 
