@@ -1,0 +1,377 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+Baseline submission for the music alignment challenge 
+for Musical Informatics WS23
+"""
+import warnings
+
+import partitura as pt
+import os
+from concurrent.futures import ProcessPoolExecutor
+
+# Uncomment this line if the kernel keeps crashing
+# See https://stackoverflow.com/a/53014308
+# os.environ['KMP_DUPLICATE_LIB_OK']='True'
+
+from typing import Union, List, Tuple, Dict, Any
+
+import numpy as np
+from fastdtw import fastdtw
+from scipy.spatial import distance as sp_dist
+
+from challenge_utils import (
+    load_dataset,
+    compare_alignments,
+    export_to_challenge,
+)
+
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    module="partitura.*",
+)
+
+
+#### FEATURES: PIANO ROLLS
+
+
+def compute_pianoroll_score(
+    score_note_array: np.ndarray,
+    time_div: Union[str, int] = "auto",
+) -> (np.ndarray, np.ndarray):
+    """
+    Compute Piano Roll for the Score
+
+    Parameters
+    ----------
+    score_note_array : structured array
+        Structured array with note information for the score
+    time_div : int or "auto"
+       Resolution of the piano roll (how many "cells" per beat).
+
+    Returns
+    -------
+    pianoroll : np.ndarray
+       A 2D pianoroll where rows represent time steps (1 / time_div)
+       and columns represent musical pitch
+    idx : np.ndarray
+       An array of indices of the notes in the spart
+
+    Note: In this example, both `compute_pianoroll_score` and
+    `compute_pianoroll_performance` are almost identical functions,
+    but you can/should play with different settings/options/features
+    """
+    piano_roll, idx = pt.utils.music.compute_pianoroll(
+        note_info=score_note_array,
+        return_idxs=True,
+        piano_range=True,  # Since we are using only piano music,
+        time_div=time_div,
+    )
+    return piano_roll.todense().T, idx
+
+
+def compute_pianoroll_performance(
+    performance_note_array: np.ndarray,
+    time_div: Union[str, int] = "auto",
+) -> (np.ndarray, np.ndarray):
+    """
+    Compute Piano Roll for the Score
+
+    Parameters
+    ----------
+    performance_note_array : structured array
+       Structured array with performance information
+    time_div : int or "auto"
+       Resolution of the piano roll (how many "cells" per second).
+
+    Returns
+    -------
+    pianoroll : np.ndarray
+       A 2D pianoroll where rows represent time steps (1 / time_div)
+       and columns represent musical pitch
+    idx : np.ndarray
+       An array of indices of the notes in the ppart
+
+    Note: In this example, both `compute_pianoroll_score` and
+    `compute_pianoroll_performance` are almost identical functions,
+    but you can/should play with different settings/options/features
+    """
+    piano_roll, idx = pt.utils.music.compute_pianoroll(
+        note_info=performance_note_array,
+        return_idxs=True,
+        piano_range=True,  # Since we are using only piano music,
+        time_div=time_div,
+    )
+
+    # Discard MIDI velocity
+    piano_roll = piano_roll.todense().T
+    piano_roll[piano_roll > 0] = 1
+    return piano_roll, idx
+
+
+#### DYNAMIC TIME WARPING
+
+
+def fast_dynamic_time_warping(
+    X: np.ndarray,
+    Y: np.ndarray,
+    metric: str = "euclidean",
+) -> (np.ndarray, float):
+    """
+     Fast Dynamic Time Warping
+
+    This is an approximate solution to dynamic time warping.
+
+    Parameters
+    ----------
+    X : np.ndarray
+    Y: np.ndarray
+    metric : str
+       The name of the metric to use
+
+    Returns
+    -------
+    warping_path: np.ndarray
+        The warping path for the best alignment
+    dtwd : float
+        The dynamic time warping distance of the alignment.
+    """
+
+    # Get distance measure from scipy dist
+
+    if metric == "euclidean":
+        # Use faster implementation
+        dist = 2
+    else:
+        dist = getattr(sp_dist, metric)
+    dtwd, warping_path = fastdtw(X, Y, dist=dist)
+
+    # Make path a numpy array
+    warping_path = np.array(warping_path)
+    return warping_path, dtwd
+
+
+#### NOTEWISE ALIGNMENT
+
+
+def greedy_note_alignment(
+    warping_path: np.ndarray,
+    idx1: np.ndarray,
+    note_array1: np.ndarray,
+    idx2: np.ndarray,
+    note_array2: np.ndarray,
+) -> List[dict]:
+    """
+    Greedily find and store possible note alignments
+
+    Parameters
+    ----------
+    warping_path : numpy ndarray
+        alignment sequence idx in stacked columns
+    idx1: numpy ndarray
+        pitch, start, and end coordinates of all notes in note_array1
+    note_array1: numpy structured array
+        note_array of sequence 1 (the score)
+    idx2: numpy ndarray
+        pitch, start, and end coordinates of all notes in note_array2
+    note_array2: numpy structured array
+        note_array of sequence 2 (the performance)
+
+    Returns
+    ----------
+    note_alignment : list
+        list of note alignment dictionaries
+
+    """
+    note_alignment = []
+    used_notes1 = []
+    used_notes2 = []
+
+    coord_info1 = idx1
+    if idx1.shape[1] == 3:
+        # Assume that the first column contains the correct MIDI pitch
+        coord_info1 = np.column_stack((idx1, idx1[:, 0]))
+
+    coord_info2 = idx2
+
+    if idx2.shape[1] == 3:
+        # Assume that the first column contains the correct MIDI pitch
+        coord_info2 = np.column_stack((idx2, idx2[:, 0]))
+
+    # loop over all notes in sequence 1
+    for note1, coord1 in zip(note_array1, coord_info1):
+        note1_id = note1["id"]
+        pc1, s1, e1, pitch1 = coord1
+
+        # find the coordinates of the note in the warping_path
+
+        idx_in_warping_path = np.all(
+            [warping_path[:, 0] >= s1, warping_path[:, 0] <= e1], axis=0
+        )
+
+        range_in_sequence2 = warping_path[idx_in_warping_path, 1]
+        max2 = np.max(range_in_sequence2)
+        min2 = np.min(range_in_sequence2)
+
+        # loop over all notes in sequence 2 and pick the notes with same pitch
+        # and position
+        for note2, coord2 in zip(note_array2, coord_info2):
+            note2_id = note2["id"]
+            pc2, s2, e2, pitch2 = coord2
+            if note2_id not in used_notes2:
+                if pitch2 == pitch1 and s2 <= max2 and e2 >= min2:
+                    note_alignment.append(
+                        {
+                            "label": "match",
+                            "score_id": note1_id,
+                            "performance_id": str(note2_id),
+                        }
+                    )
+                    used_notes2.append(str(note2_id))
+                    used_notes1.append(note1_id)
+
+        # check if a note has been found for the sequence 1 note,
+        # otherwise add it as deletion
+        if note1_id not in used_notes1:
+            note_alignment.append({"label": "deletion", "score_id": note1_id})
+            used_notes1.append(note1_id)
+
+    # check again for all notes in sequence 2, if not used,
+    # add them as insertions
+    for note2 in note_array2:
+        note2_id = note2["id"]
+        if note2_id not in used_notes2:
+            note_alignment.append(
+                {
+                    "label": "insertion",
+                    "performance_id": str(note2_id),
+                }
+            )
+            used_notes2.append(str(note2_id))
+
+    return note_alignment
+
+
+#### For Parallel Processing
+
+
+def process_piece(
+    piece_name: str,
+    pdata: Tuple,
+) -> Tuple[str, Dict[str, Any], Tuple[float, float, float]]:
+    """
+    Compute the alignment of a piece
+    """
+    # Extract data from pdata
+    performance_note_array, score_note_array, gt_alignment = pdata
+
+    # 2. Compute the features (Adapt this part as needed!)
+    score_features, score_idx = compute_pianoroll_score(
+        score_note_array=score_note_array,
+        time_div="auto",
+    )
+
+    performance_features, performance_idx = compute_pianoroll_performance(
+        performance_note_array=performance_note_array,
+        time_div="auto",
+    )
+
+    # 3. Compute the alignment (Adapt this part as needed!)
+    warping_path, _ = fast_dynamic_time_warping(
+        X=score_features,
+        Y=performance_features,
+        metric="euclidean",
+    )
+
+    predicted_alignment = greedy_note_alignment(
+        warping_path=warping_path,
+        idx1=score_idx,
+        note_array1=score_note_array,
+        idx2=performance_idx,
+        note_array2=performance_note_array,
+    )
+
+    # Compute evaluation (Do not change this)
+    piece_eval = compare_alignments(
+        prediction=predicted_alignment,
+        ground_truth=gt_alignment,
+    )
+
+    return piece_name, predicted_alignment, piece_eval
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Score-to-performance Alignment",
+    )
+    parser.add_argument(
+        "--datadir",
+        "-i",
+        help="path to the input files",
+        default=None,
+        type=str,
+    )
+    parser.add_argument(
+        "--outdir",
+        "-o",
+        help="Output text file directory",
+        type=str,
+        default=".",
+    )
+    parser.add_argument(
+        "--challenge",
+        "-c",
+        help="Export results for challenge",
+        action="store_true",
+        default=False,
+    )
+
+    parser.add_argument(
+        "--max-workers",
+        "-m",
+        help="Maximum number of workers for parallel processing of the pieces (by default will use all available processors)",
+        default=None,
+    )
+    args = parser.parse_args()
+
+    if args.datadir is None:
+        raise ValueError("No data directory given")
+
+    # Create output directory if it does not exist
+    if not os.path.exists(args.outdir):
+        os.mkdir(args.outdir)
+
+    # 1. Load the data
+    dataset = load_dataset(args.datadir)
+
+    # Lists to store results
+    alignments = []
+    evaluation = []
+    piece_names = []
+
+    # Using ProcessPoolExecutor to parallelize the loop
+    with ProcessPoolExecutor() as executor:
+        results = list(executor.map(process_piece, dataset.keys(), dataset.values()))
+
+    # Aggregate results
+    for res_piece_name, res_predicted_alignment, res_piece_eval in results:
+        piece_names.append(res_piece_name)
+        alignments.append(res_predicted_alignment)
+        evaluation.append(res_piece_eval)
+        print(
+            f"{res_piece_name}: F-score:{res_piece_eval[2]:.2f} Precision:{res_piece_eval[0]:.2f} Recall:{res_piece_eval[1]:.2f}"
+        )
+
+    if args.challenge:
+        # Do not modify this!
+        script_name = os.path.splitext(os.path.basename(__file__))[0]
+        outfile = os.path.join(args.outdir, f"{script_name}_challenge.npz")
+
+        export_to_challenge(
+            alignments=alignments,
+            piece_names=piece_names,
+            out=outfile,
+        )
