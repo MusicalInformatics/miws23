@@ -57,6 +57,6 @@ For the challenge, your script submission should be executed in the following wa
 python TeamName_Alignment.py -c -i path_to_the_data_directory -o output_directory
 ```
 
-The file `TeamName_Alignment.py` should be as self-contained as possible and you can use third-party libraries that are not included in the conda environment for the course. You can use the methods defined in the class (and  available on the [GitHub repository](https://github.com/MusicalInformatics/miws23/tree/main)). Please upload a zip file with all of the files to run your submission, including the python script itself, the conda environment yaml file, any other helper files and trained model weights (if relevant).
+The file `TeamName_Alignment.py` should be as self-contained as possible and you can use third-party libraries that are not included in the conda environment for the course. You can use the methods defined in the class (and  available on the [GitHub repository](https://github.com/MusicalInformatics/miws23/tree/main)). Please upload a zip file with all of the files to run your submission, including the python script itself, the conda environment yaml file, any other helper files and trained model weights (if relevant) and a `README.md` file indicating how to setup and run the code.
 
 Please follow the example in `Baseline_Alignment.py` in the `alignment` folder in the GitHub repository.
