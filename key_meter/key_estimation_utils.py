@@ -1,9 +1,12 @@
 """
 Utilities for Key estimation notebook
 """
+import os
+
 import numpy as np
 import matplotlib.pyplot as plt
 
+NOTEBOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class InteractiveCircleOfFifths(object):
     def __init__(
