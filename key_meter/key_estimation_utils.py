@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Utilities for Key estimation notebook
 """
@@ -6,14 +8,30 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
+from matplotlib.backend_bases import MouseEvent
+
 NOTEBOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 
+
 class InteractiveCircleOfFifths(object):
+    """
+    Interactive visualization for the circle of fifths.
+
+    Parameters
+    ----------
+    start_key : str
+        Key at 12 o'clock in the Circle of Fifths
+    radius: float, optional
+        Radius of the circle for major keys
+    circle_radius: float, optional
+        Radius of the small circles for key names
+    """
+
     def __init__(
         self,
         start_key: str = "C",
-        radius=5,
-        circle_radius=0.5,
+        radius: float = 5,
+        circle_radius: float = 0.5,
     ) -> None:
         self.start_key = start_key
         self.radius = radius
@@ -129,7 +147,7 @@ class InteractiveCircleOfFifths(object):
     def connect_events(self) -> None:
         self.fig.canvas.mpl_connect("button_press_event", self.on_click)
 
-    def on_click(self, event):
+    def on_click(self, event: MouseEvent):
         if event.inaxes != self.ax:
             return
 
@@ -160,7 +178,7 @@ class InteractiveCircleOfFifths(object):
         elif event.button == 3:
             self.deselect_point(x, y)
 
-    def deselect_point(self, x, y) -> None:
+    def deselect_point(self, x: float, y: float) -> None:
         if not self.clicked_points:
             return
         closest_point_index = np.argmin(

@@ -30,8 +30,20 @@ MAJOR_KEYS = [
 MINOR_KEYS_u = [k + "m" for k in MAJOR_KEYS]
 MINOR_KEYS = MINOR_KEYS_u[3:] + MINOR_KEYS_u[:3]
 
-KEY_COORDINATES = dict([(key, np.array([np.cos(np.pi * i / 6), np.sin(np.pi * i / 6)])) for i, key in enumerate(MAJOR_KEYS)])
-KEY_COORDINATES.update(dict([(key, np.array([np.cos(np.pi * i / 6), np.sin(np.pi * i / 6)])) for i, key in enumerate(MINOR_KEYS)]))
+KEY_COORDINATES = dict(
+    [
+        (key, np.array([np.cos(np.pi * i / 6), np.sin(np.pi * i / 6)]))
+        for i, key in enumerate(MAJOR_KEYS)
+    ]
+)
+KEY_COORDINATES.update(
+    dict(
+        [
+            (key, np.array([np.cos(np.pi * i / 6), np.sin(np.pi * i / 6)]))
+            for i, key in enumerate(MINOR_KEYS)
+        ]
+    )
+)
 
 
 def enharmonic_spelling(key: str) -> str:
@@ -109,54 +121,6 @@ def compare_keys(prediction_key: str, ground_truth_key: str) -> float:
     score = 6 * angle / np.pi + 1 if (mp != mg) else 6 * angle / np.pi
 
     return score
-    
-
-
-# def compare_keys(prediction_key: str, ground_truth_key: str) -> int:
-#     """
-#     Tonal Distance between two keys.
-
-#     This method computes the tonal distance (in terms of closeness in
-#     the circle of fifths).
-
-#     Parameters
-#     ----------
-#     prediction_key: str
-#         Predicted key.
-
-#     ground_truth_key: str
-#         Ground truth key.
-
-#     Returns
-#     -------
-#     score: int
-#         Tonal distance.
-#     """
-
-#     pred_key = enharmonic_spelling(prediction_key)
-#     gt_key = enharmonic_spelling(ground_truth_key)
-#     if pred_key in MAJOR_KEYS and gt_key in MAJOR_KEYS:
-#         pidx = MAJOR_KEYS.index(pred_key)
-#         gidx = MAJOR_KEYS.index(gt_key)
-#         return min((gidx - pidx) % 12, (pidx - gidx) % 12)
-#     elif pred_key in MINOR_KEYS and gt_key in MINOR_KEYS:
-#         pidx = MINOR_KEYS.index(pred_key)
-#         gidx = MINOR_KEYS.index(gt_key)
-#         return min((gidx - pidx) % 12, (pidx - gidx) % 12)
-#     elif pred_key in MAJOR_KEYS and gt_key in MINOR_KEYS:
-#         pidx = MAJOR_KEYS.index(pred_key)
-#         gidx = MINOR_KEYS.index(gt_key)
-#         return min((gidx - pidx) % 12, (pidx - gidx) % 12)
-#     elif pred_key in MINOR_KEYS and gt_key in MAJOR_KEYS:
-#         pidx = MINOR_KEYS.index(pred_key)
-#         gidx = MAJOR_KEYS.index(gt_key)
-#         return min((gidx - pidx) % 12, (pidx - gidx) % 12)
-#     else:
-#         raise Exception(
-#             "input keys need to be in the following format:",
-#             MAJOR_KEYS,
-#             MINOR_KEYS,
-#         )
 
 
 def load_submission(fn: str) -> dict:
@@ -171,13 +135,12 @@ def load_submission(fn: str) -> dict:
         comments="//",
     )
 
-    ground_truth = dict([(g[0], g[1]) for g in gt])
+    predictions = dict([(g[0], g[1]) for g in gt])
 
-    return ground_truth
+    return predictions
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--submission", type=str)
     parser.add_argument("--target", type=str, default=None)
@@ -190,7 +153,6 @@ if __name__ == "__main__":
     target = load_submission(args.target)
 
     for piece, key in target.items():
-
         if piece in submission:
             td = compare_keys(submission[piece], key)
         else:
