@@ -52,6 +52,7 @@ def get_frames_quantized(
         binary = False
         agg_fun = np.sum
     elif aggregation == "max_vel":
+        binary = False
         agg_fun = np.max
 
     onset_pr = pt.utils.music.compute_pianoroll(
