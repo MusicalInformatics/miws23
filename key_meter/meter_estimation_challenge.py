@@ -59,11 +59,11 @@ def load_submission(fn: str) -> dict:
     )
 
     if gt.shape[1] > 3:
-        ground_truth = dict([(g[0], (int(g[2]), float(g[4]))) for g in gt])
+        submission = dict([(g[0], (int(g[2]), float(g[4]))) for g in gt])
     else:
-        ground_truth = dict([(g[0], (int(g[1]), float(g[2]))) for g in gt])
+        submission = dict([(g[0], (int(g[1]), float(g[2]))) for g in gt])
 
-    return ground_truth
+    return submission
 
 
 if __name__ == "__main__":
