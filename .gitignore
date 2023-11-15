@@ -166,3 +166,5 @@ alignment/parangonada_files/
 alignment/parangonada_files.zip
 alignment/Baseline/BaseAlignmentParallel_challenge.npz
 alignment/BaselineTraining/Baseline_Alignment_P_challenge.npz
+expectation/*.pth
+expectation/*_loss.txt
