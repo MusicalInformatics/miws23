@@ -2,7 +2,11 @@
 # -*- coding: utf-8 -*-
 
 # single script challenge submission template
-from typing import Union, Tuple, Iterable
+import os
+from concurrent.futures import ProcessPoolExecutor
+from tqdm import tqdm
+
+from typing import Union, Tuple, Iterable, Optional, Dict
 
 import numpy as np
 import partitura as pt
@@ -27,7 +31,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
-FRAMERATE = 24
+FRAMERATE = 8
 CHORD_SPREAD_TIME = 0.05  # for onset aggregation
 
 
@@ -72,15 +76,25 @@ class MeterObservationModel(ObservationModel):
             return np.log(self.probabilities[observation, :])
 
 
-def getTransitionMatrix(states: int, distribution: Iterable = [0.1, 0.8, 0.1]):
+def getTransitionMatrix(
+    states: int,
+    distribution: Iterable = [0.1, 0.8, 0.1],
+) -> np.ndarray:
+    """
+    Compute transition Matrix
+    """
+    if states == 1:
+        raise ValueError("The number of states should be > 1")
     transition_matrix = (
         np.eye(states, k=0) * distribution[0]
         + np.eye(states, k=1) * distribution[1]
         + np.eye(states, k=2) * distribution[2]
         + np.ones((states, states)) / 1e7
     )
+
     transition_matrix[-2, 0] = distribution[2]
     transition_matrix[-1, 0] = distribution[2] + distribution[1]
+
     return transition_matrix
 
 
@@ -89,7 +103,29 @@ def createHMM(
     frame_rate: int = FRAMERATE,  # frames_per_beat
     beats_per_measure: int = 4,
     subbeats_per_beat: int = 2,
-):
+) -> Tuple[MeterObservationModel, ConstantTransitionModel]:
+    """
+    Create observation and transition models for the HMM
+
+    Parameters
+    ----------
+    tempo : float
+        Tempo in beats per minute
+    frame_rate: int
+        Number of frames per beat. Selecting a large frame_rate can result
+        in very slow models!
+    beats_per_measure: int
+        Number of beats per measure (numerator of the time signature)
+    subbeats_per_beat: int
+        Number of divisions per beat (generally 2 or 3)
+
+    Returns
+    -------
+    observation_model: MeterObservationModel
+        The observation model of the HMM
+    transition_model: ConstantTransitionModel
+        The transition model of the HMM
+    """
     frames_per_beat = 60 / tempo * frame_rate
     frames_per_measure = frames_per_beat * beats_per_measure
     states = int(frames_per_measure)
@@ -115,7 +151,6 @@ def createHMM(
 
 def estimate_meter(
     filename: PathLike,
-    # note_info: PerformanceLike,
     beats_per_measure: Iterable[int] = [2, 3, 4],
     subbeats_per_beat: Iterable[int] = [2, 3],
     tempi: Union[Iterable[int], str] = "auto",
@@ -144,7 +179,6 @@ def estimate_meter(
     # get note array
     performance = pt.load_performance_midi(filename)
     note_array = performance.note_array()
-    # note_array = pt.utils.ensure_notearray(note_info)
 
     if frame_aggregation == "chordify":
         frames = get_frames_chordify(
@@ -164,9 +198,12 @@ def estimate_meter(
 
     if tempi == "auto":
         autocorr = compute_autocorrelation(frames)
-        beat_period, _ = find_peaks(autocorr[1:], prominence=20)
+        beat_period, _ = find_peaks(autocorr[1:], prominence=None)
         tempi = 60 * framerate / (beat_period + 1)
         tempi = tempi[np.logical_and(tempi <= max_tempo, tempi >= min_tempo)]
+
+        if len(tempi) == 0:
+            tempi = np.linspace(min_tempo, max_tempo, 10)
 
     likelihoods = []
 
@@ -198,10 +235,37 @@ def estimate_meter(
     best_result = likelihoods[likelihoods[:, 3].argmax()]
 
     best_ts = int(best_result[0])
-    # best_sbpb = int(best_result[1])
     best_tempo = best_result[2]
 
     return best_ts, best_tempo
+
+
+def process_file(
+    mfn: PathLike, ground_truth: Dict[str, Tuple[float, float]],
+) -> Tuple[str, int, float, Optional[float], Optional[float]]:
+    """
+    Compute meter and get evaluation for
+    """
+    piece = os.path.basename(mfn)
+    predicted_meter, predicted_tempo = estimate_meter(filename=mfn)
+
+    meter_accuracy = None
+    tempo_error = None
+    if piece in ground_truth:
+        expected_meter, expected_tempo = ground_truth[piece]
+        meter_accuracy, tempo_error = compare_meter_and_tempo(
+            predicted_meter,
+            expected_meter,
+            predicted_tempo,
+            expected_tempo,
+        )
+    return (
+        piece,
+        predicted_meter,
+        predicted_tempo,
+        meter_accuracy,
+        tempo_error,
+    )
 
 
 if __name__ == "__main__":
@@ -253,36 +317,39 @@ if __name__ == "__main__":
     if args.ground_truth:
         ground_truth = load_submission(args.ground_truth)
 
-    results = []
-    evaluation = []
-    for i, mfn in enumerate(midi_files):
-        piece = os.path.basename(mfn)
-        predicted_meter, predicted_tempo = estimate_meter(
-            filename=mfn,
+    # Parallel processing with concurrent.futures
+    with ProcessPoolExecutor() as executor:
+        # Using executor.map for parallel processing
+        results_ = list(
+            tqdm(
+                executor.map(
+                    process_file,
+                    midi_files,
+                    len(midi_files) * [ground_truth],
+                ),
+                total=len(midi_files),
+            )
         )
 
-        results.append((piece, predicted_meter, predicted_tempo))
+    results = [res[:3] for res in results_]
+    evaluation = [res[3:] for res in results_]
 
-        if piece in ground_truth:
-            expected_meter, expected_tempo = ground_truth[piece]
-            meter_accuracy, tempo_error = compare_meter_and_tempo(
-                predicted_meter,
-                expected_meter,
-                predicted_tempo,
-                expected_tempo,
-            )
+    for (piece, predicted_meter, predicted_tempo), (meter_accuracy, tempo_error) in zip(
+        results, evaluation
+    ):
+        expected_meter, expected_tempo = ground_truth[piece]
+        if meter_accuracy is not None:
             print(
-                f"{i+1}/{len(midi_files)} {piece}: "
+                f"{piece}: "
                 f"\tPredicted:{predicted_meter} {predicted_tempo:.2f}"
                 f"\tExpected:{expected_meter} {expected_tempo:.2f}"
                 f"\tTempo error:{tempo_error}"
             )
-            evaluation.append((meter_accuracy, tempo_error))
 
     mean_eval = np.mean(evaluation, 0)
     if len(evaluation) > 0:
         print("\n\nAverage Performance over dataset")
-        print(f"\tMeter accuracy{mean_eval[0]: .2f}")
+        print(f"\tMeter accuracy{mean_eval[0] * 100: .1f}")
         print(f"\tTempo error: {mean_eval[1]: .2f}")
 
     if args.challenge:
