@@ -27,7 +27,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
-FRAMERATE = 50
+FRAMERATE = 24
 CHORD_SPREAD_TIME = 0.05  # for onset aggregation
 
 
@@ -200,7 +200,7 @@ def estimate_meter(
     best_ts = int(best_result[0])
     # best_sbpb = int(best_result[1])
     best_tempo = best_result[2]
-    
+
     return best_ts, best_tempo
 
 
